@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EventHub — 理系・知的好奇心のためのイベント情報</title>
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    :root {
+      --pri:#1e40af; --pri-lt:#3b82f6; --bg:#f1f5f9; --card:#fff;
+      --text:#1e293b; --muted:#64748b; --border:#e2e8f0;
+      --sh:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);
+      --sh-lg:0 10px 25px rgba(0,0,0,.14); --r:12px;
+    }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans','Meiryo',sans-serif;
+           background:var(--bg);color:var(--text);line-height:1.65;font-size:14px; }
+
+    /* ── Header ── */
+    .header { background:linear-gradient(135deg,#1e3a8a,#1d4ed8 55%,#2563eb);
+               color:#fff;position:sticky;top:0;z-index:200;
+               box-shadow:0 4px 20px rgba(30,64,175,.4); }
+    .header-inner { max-width:1400px;margin:0 auto;padding:14px 20px;
+                    display:flex;align-items:center;gap:14px;flex-wrap:wrap; }
+    .logo { display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff;flex-shrink:0; }
+    .logo-icon { width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,.2);
+                 display:flex;align-items:center;justify-content:center;font-size:20px; }
+    .logo h1 { font-size:20px;font-weight:800;letter-spacing:-.5px; }
+    .logo p  { font-size:11px;opacity:.7;margin-top:1px; }
+    .search-wrap { flex:1;min-width:180px;position:relative; }
+    .search-input { width:100%;padding:10px 38px 10px 15px;background:rgba(255,255,255,.18);
+                    border:2px solid rgba(255,255,255,.28);border-radius:50px;color:#fff;
+                    font-size:13px;outline:none;transition:.25s; }
+    .search-input::placeholder { color:rgba(255,255,255,.6); }
+    .search-input:focus { background:rgba(255,255,255,.28);border-color:rgba(255,255,255,.65); }
+    .search-icon { position:absolute;right:12px;top:50%;transform:translateY(-50%);opacity:.7; }
+    .loc-wrap { display:flex;align-items:center;gap:8px;flex-shrink:0; }
+    .loc-label { font-size:12px;opacity:.8;white-space:nowrap; }
+    .city-select { padding:8px 12px;border-radius:8px;border:2px solid rgba(255,255,255,.35);
+                   background:rgba(255,255,255,.15);color:#fff;font-size:13px;font-weight:600;
+                   outline:none;cursor:pointer;max-width:220px; }
+    .city-select option, .city-select optgroup { background:#1e3a8a;color:#fff; }
+    /* 3-state location mode */
+    .loc-mode { display:flex;background:rgba(0,0,0,.18);border-radius:8px;padding:3px;
+                border:1px solid rgba(255,255,255,.22); }
+    .loc-btn { padding:5px 11px;background:transparent;border:none;color:rgba(255,255,255,.72);
+               font-size:11.5px;font-weight:600;cursor:pointer;border-radius:6px;
+               white-space:nowrap;transition:.15s; }
+    .loc-btn:hover { color:#fff; }
+    .loc-btn.active { background:rgba(255,255,255,.28);color:#fff;font-weight:800;
+                      box-shadow:0 1px 3px rgba(0,0,0,.2); }
+
+    /* Venue section */
+    .venues-sec { margin-top:36px;padding:24px;background:#fff;border-radius:var(--r);
+                  border:1px solid var(--border);box-shadow:var(--sh); }
+    .venues-sec > h2 { font-size:17px;font-weight:800;margin-bottom:6px;
+                       display:flex;align-items:center;gap:8px; }
+    .venues-sec > h2::before { content:'';display:block;width:4px;height:18px;
+                               background:var(--pri);border-radius:2px; }
+    .venues-sec > p  { font-size:12px;color:var(--muted);margin-bottom:18px; }
+    .v-region { margin-bottom:18px; }
+    .v-region:last-child { margin-bottom:0; }
+    .v-region h3 { font-size:13px;font-weight:700;color:var(--pri);margin-bottom:8px;
+                   padding:4px 10px;background:#dbeafe;border-radius:6px;
+                   display:inline-block; }
+    .v-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px; }
+    .v-card { display:block;padding:11px 14px;background:#f8fafc;border:1px solid var(--border);
+              border-radius:8px;text-decoration:none;color:var(--text);transition:.2s; }
+    .v-card:hover { background:#eff6ff;border-color:var(--pri-lt);transform:translateY(-1px); }
+    .v-card strong { display:block;font-size:13px;font-weight:700;margin-bottom:2px; }
+    .v-card span   { display:block;font-size:11px;color:var(--muted); }
+
+    /* ── Category Bar ── */
+    .cat-bar { background:#fff;border-bottom:1px solid var(--border);
+               position:sticky;top:72px;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.06); }
+    .cat-inner { max-width:1400px;margin:0 auto;padding:0 18px;
+                 display:flex;gap:2px;overflow-x:auto;scrollbar-width:none; }
+    .cat-inner::-webkit-scrollbar { display:none; }
+    .cat-btn { display:flex;align-items:center;gap:6px;padding:11px 14px;border:none;
+               background:transparent;color:var(--muted);font-size:13px;font-weight:500;
+               cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.2s; }
+    .cat-btn:hover { color:var(--pri); }
+    .cat-btn.active { color:var(--pri);border-bottom-color:var(--pri);font-weight:700; }
+    .cat-pill { font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;
+                background:var(--bg);color:var(--muted); }
+    .cat-btn.active .cat-pill { background:var(--pri);color:#fff; }
+
+    /* ── Main ── */
+    .main { max-width:1400px;margin:0 auto;padding:20px 20px 48px; }
+
+    /* ── Loading / Error ── */
+    .state-box { text-align:center;padding:60px 20px;color:var(--muted); }
+    .state-icon { font-size:48px;margin-bottom:14px; }
+    .state-box h3 { font-size:17px;color:var(--text);margin-bottom:8px; }
+    .state-box p  { font-size:13px;margin-bottom:14px; }
+    .spinner { width:38px;height:38px;border:4px solid #dbeafe;border-top-color:var(--pri);
+               border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .retry-btn { padding:8px 20px;background:var(--pri);color:#fff;border:none;
+                 border-radius:8px;font-size:13px;font-weight:700;cursor:pointer; }
+    .retry-btn:hover { background:#1d4ed8; }
+
+    /* ── Interest Box ── */
+    .interest-box { background:linear-gradient(135deg,#1e3a8a,#1d4ed8);
+                    border-radius:var(--r);padding:16px 20px;margin-bottom:20px;color:#fff; }
+    .interest-box h2 { font-size:14px;font-weight:700;margin-bottom:3px; }
+    .interest-box p  { font-size:11px;opacity:.75;margin-bottom:11px; }
+    .itags { display:flex;flex-wrap:wrap;gap:7px; }
+    .itag { padding:5px 13px;border-radius:20px;font-size:12px;cursor:pointer;
+            background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);
+            color:#fff;transition:.2s; }
+    .itag:hover { background:rgba(255,255,255,.27); }
+    .itag.active { background:rgba(255,255,255,.35);border-color:rgba(255,255,255,.8);font-weight:700; }
+
+    /* ── Section header ── */
+    .sec-hd { display:flex;align-items:center;justify-content:space-between;margin-bottom:13px; }
+    .sec-title { font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px; }
+    .sec-title::before { content:'';display:block;width:4px;height:18px;
+                         background:var(--pri);border-radius:2px; }
+    .sec-count { font-size:13px;color:var(--muted); }
+    .sec-count span { font-size:16px;font-weight:800;color:var(--pri); }
+
+    /* ── Tag filter row ── */
+    .tag-row { display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px; }
+    .ftag { padding:4px 12px;border-radius:20px;font-size:11.5px;cursor:pointer;
+            background:var(--bg);border:1px solid var(--border);color:var(--muted);transition:.2s; }
+    .ftag:hover { border-color:var(--pri-lt);color:var(--pri-lt); }
+    .ftag.active { background:var(--pri);border-color:var(--pri);color:#fff; }
+
+    /* ── Events Grid ── */
+    .ev-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));
+               gap:14px;margin-bottom:24px; }
+    .ev-card { background:var(--card);border-radius:var(--r);overflow:hidden;
+               box-shadow:var(--sh);border:1px solid var(--border);
+               cursor:pointer;transition:transform .25s,box-shadow .25s;
+               display:flex;flex-direction:column; }
+    .ev-card:hover { transform:translateY(-3px);box-shadow:var(--sh-lg); }
+    .ev-card.highlight { border-color:#93c5fd;box-shadow:0 0 0 2px #bfdbfe,var(--sh); }
+
+    /* Card thumbnail */
+    .card-thumb { position:relative;height:150px;overflow:hidden;flex-shrink:0; }
+    .card-thumb-img { width:100%;height:100%;object-fit:cover;display:block;transition:transform .4s; }
+    .ev-card:hover .card-thumb-img { transform:scale(1.06); }
+    .card-thumb-grad { width:100%;height:100%;display:flex;align-items:center;justify-content:center; }
+    .thumb-icon { font-size:50px;filter:drop-shadow(0 2px 5px rgba(0,0,0,.25)); }
+
+    .badge { position:absolute;top:9px;left:9px;padding:3px 10px;border-radius:20px;
+             font-size:10px;font-weight:700;display:flex;align-items:center;gap:4px; }
+    .badge-soon { position:absolute;top:9px;right:9px;background:#ef4444;color:#fff;
+                  padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800; }
+    .badge-rec  { position:absolute;bottom:9px;right:9px;background:rgba(30,64,175,.85);
+                  color:#fff;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700; }
+    .badge-dist { position:absolute;bottom:9px;left:9px;background:rgba(0,0,0,.55);
+                  color:#fff;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:700; }
+    .badge-online { position:absolute;top:9px;right:9px;background:rgba(14,165,233,.9);
+                    color:#fff;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700; }
+
+    .card-body { padding:13px;flex:1;display:flex;flex-direction:column; }
+    .card-title { font-size:13.5px;font-weight:700;margin-bottom:5px;line-height:1.45;
+                  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+    .card-desc  { font-size:11.5px;color:var(--muted);flex:1;margin-bottom:8px;
+                  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+    .card-meta  { font-size:11.5px;color:var(--muted);display:flex;flex-direction:column;gap:3px;
+                  padding-top:8px;border-top:1px solid var(--border); }
+    .card-meta div { display:flex;align-items:center;gap:5px; }
+
+    .card-footer { padding:8px 13px;background:var(--bg);
+                   display:flex;align-items:center;justify-content:space-between; }
+    .card-src  { font-size:11px;color:var(--muted); }
+    .card-link { font-size:11px;font-weight:700;color:var(--pri-lt);text-decoration:none; }
+    .card-link:hover { text-decoration:underline; }
+    .card-seats { font-size:10px;padding:1px 6px;border-radius:4px;
+                  background:#dcfce7;color:#15803d;font-weight:700;white-space:nowrap; }
+    .card-seats.warn { background:#fef3c7;color:#92400e; }
+    .card-seats.full { background:#fee2e2;color:#991b1b; }
+
+    /* Category colors */
+    .t-tech      { background:#dbeafe;color:#1e40af; }
+    .t-science   { background:#d1fae5;color:#065f46; }
+    .t-education { background:#fef3c7;color:#78350f; }
+    .t-art       { background:#ede9fe;color:#5b21b6; }
+    .t-academic  { background:#fee2e2;color:#991b1b; }
+    .t-music     { background:#fce7f3;color:#9d174d; }
+    .t-sports    { background:#ffedd5;color:#9a3412; }
+    .t-food      { background:#ecfdf5;color:#065f46; }
+    .g-tech      { background:linear-gradient(135deg,#1e40af,#3b82f6); }
+    .g-science   { background:linear-gradient(135deg,#065f46,#10b981); }
+    .g-education { background:linear-gradient(135deg,#78350f,#f59e0b); }
+    .g-art       { background:linear-gradient(135deg,#5b21b6,#a78bfa); }
+    .g-academic  { background:linear-gradient(135deg,#7f1d1d,#f87171); }
+    .g-music     { background:linear-gradient(135deg,#831843,#f472b6); }
+    .g-sports    { background:linear-gradient(135deg,#7c2d12,#fb923c); }
+    .g-food      { background:linear-gradient(135deg,#134e4a,#34d399); }
+
+    /* Load more */
+    .load-more { text-align:center;margin-top:6px; }
+    .load-more button { padding:10px 32px;border:2px solid var(--pri);color:var(--pri);
+                        background:transparent;border-radius:8px;font-size:13px;font-weight:700;
+                        cursor:pointer;transition:.2s; }
+    .load-more button:hover { background:var(--pri);color:#fff; }
+
+    /* Footer */
+    .footer { background:#1e293b;color:#94a3b8;text-align:center;
+              padding:22px;font-size:12px;margin-top:24px; }
+    .footer strong { color:#cbd5e1; }
+    .footer a { color:#60a5fa; }
+
+    @media(max-width:900px) {
+      .loc-wrap { width:100%; }
+      .city-select { flex:1;max-width:none; }
+    }
+    @media(max-width:600px) {
+      .main { padding:14px 12px 36px; }
+      .ev-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<header class="header">
+  <div class="header-inner">
+    <a class="logo" href="#">
+      <div class="logo-icon">🔭</div>
+      <div><h1>EventHub</h1><p>理系・知的好奇心のためのイベント情報</p></div>
+    </a>
+    <div class="search-wrap">
+      <input id="searchInput" class="search-input" type="text"
+             placeholder="イベント名・キーワードで検索…" autocomplete="off">
+      <span class="search-icon">🔍</span>
+    </div>
+    <div class="loc-wrap">
+      <span class="loc-label">📍 活動エリア</span>
+      <select id="citySelect" class="city-select">
+        <option value="">全国（距離順なし）</option>
+        <optgroup label="── 北海道">
+          <option value="1|43.0642|141.3469|Hokkaido">札幌市</option>
+          <option value="1|43.7706|142.3651|Hokkaido">旭川市</option>
+          <option value="1|41.7688|140.7290|Hokkaido">函館市</option>
+        </optgroup>
+        <optgroup label="── 東北">
+          <option value="2|40.8246|140.7407|Aomori">青森県 青森市</option>
+          <option value="3|39.7036|141.1527|Iwate">岩手県 盛岡市</option>
+          <option value="4|38.2688|140.8721|Miyagi">宮城県 仙台市</option>
+          <option value="5|39.7186|140.1024|Akita">秋田県 秋田市</option>
+          <option value="6|38.2404|140.3634|Yamagata">山形県 山形市</option>
+          <option value="7|37.7608|140.4748|Fukushima">福島県 福島市</option>
+          <option value="7|37.4017|140.3883|Fukushima">福島県 郡山市</option>
+        </optgroup>
+        <optgroup label="── 関東">
+          <option value="8|36.3418|140.4468|Ibaraki">茨城県 水戸市</option>
+          <option value="8|36.0833|140.0781|Ibaraki">茨城県 つくば市</option>
+          <option value="9|36.5544|139.8834|Tochigi">栃木県 宇都宮市</option>
+          <option value="10|36.3916|139.0607|Gunma">群馬県 前橋市</option>
+          <option value="10|36.3227|139.0032|Gunma">群馬県 高崎市</option>
+          <option value="11|35.8617|139.6455|Saitama">埼玉県 さいたま市</option>
+          <option value="11|35.9252|139.4859|Saitama">埼玉県 川越市</option>
+          <option value="12|35.6074|140.1065|Chiba">千葉県 千葉市</option>
+          <option value="12|35.8681|139.9751|Chiba">千葉県 柏市</option>
+          <option value="13|35.6938|139.7034|Tokyo">東京都 新宿区</option>
+          <option value="13|35.6580|139.7016|Tokyo">東京都 渋谷区</option>
+          <option value="13|35.6995|139.7533|Tokyo">東京都 千代田区（秋葉原・丸の内）</option>
+          <option value="13|35.6581|139.7514|Tokyo">東京都 港区（六本木・虎ノ門）</option>
+          <option value="13|35.6390|139.8177|Tokyo">東京都 江東区（お台場・有明）</option>
+          <option value="13|35.7295|139.7109|Tokyo">東京都 豊島区（池袋）</option>
+          <option value="13|35.6664|139.3163|Tokyo">東京都 八王子市</option>
+          <option value="14|35.4437|139.6380|Kanagawa">神奈川県 横浜市</option>
+          <option value="14|35.5309|139.7029|Kanagawa">神奈川県 川崎市</option>
+          <option value="14|35.3370|139.3627|Kanagawa">神奈川県 相模原市</option>
+          <option value="14|35.3193|139.5512|Kanagawa">神奈川県 藤沢市</option>
+        </optgroup>
+        <optgroup label="── 中部・北陸">
+          <option value="15|37.9161|139.0364|Niigata">新潟県 新潟市</option>
+          <option value="16|36.6953|137.2113|Toyama">富山県 富山市</option>
+          <option value="17|36.5944|136.6256|Ishikawa">石川県 金沢市</option>
+          <option value="18|36.0652|136.2217|Fukui">福井県 福井市</option>
+          <option value="19|35.6641|138.5686|Yamanashi">山梨県 甲府市</option>
+          <option value="20|36.6512|138.1811|Nagano">長野県 長野市</option>
+          <option value="20|36.2380|137.9721|Nagano">長野県 松本市</option>
+          <option value="21|35.4232|136.7607|Gifu">岐阜県 岐阜市</option>
+          <option value="22|34.9769|138.3831|Shizuoka">静岡県 静岡市</option>
+          <option value="22|34.7108|137.7261|Shizuoka">静岡県 浜松市</option>
+          <option value="23|35.1815|136.9066|Aichi">愛知県 名古屋市</option>
+          <option value="23|34.7693|137.3917|Aichi">愛知県 豊橋市</option>
+          <option value="24|34.7303|136.5086|Mie">三重県 津市</option>
+        </optgroup>
+        <optgroup label="── 近畿">
+          <option value="25|35.0045|135.8686|Shiga">滋賀県 大津市</option>
+          <option value="26|35.0116|135.7681|Kyoto">京都府 京都市</option>
+          <option value="27|34.7024|135.4959|Osaka">大阪府 大阪市 梅田・北区</option>
+          <option value="27|34.6687|135.4982|Osaka">大阪府 大阪市 難波・中央区</option>
+          <option value="27|34.5730|135.4828|Osaka">大阪府 堺市</option>
+          <option value="28|34.6913|135.1830|Hyogo">兵庫県 神戸市</option>
+          <option value="28|34.8394|134.6939|Hyogo">兵庫県 姫路市</option>
+          <option value="29|34.6851|135.8050|Nara">奈良県 奈良市</option>
+          <option value="30|34.2300|135.1675|Wakayama">和歌山県 和歌山市</option>
+        </optgroup>
+        <optgroup label="── 中国・四国">
+          <option value="31|35.5011|134.2351|Tottori">鳥取県 鳥取市</option>
+          <option value="32|35.4681|133.0486|Shimane">島根県 松江市</option>
+          <option value="33|34.6618|133.9344|Okayama">岡山県 岡山市</option>
+          <option value="34|34.3966|132.4596|Hiroshima">広島県 広島市</option>
+          <option value="35|34.1860|131.4706|Yamaguchi">山口県 山口市</option>
+          <option value="36|34.0657|134.5597|Tokushima">徳島県 徳島市</option>
+          <option value="37|34.3428|134.0432|Kagawa">香川県 高松市</option>
+          <option value="38|33.8395|132.7657|Ehime">愛媛県 松山市</option>
+          <option value="39|33.5597|133.5311|Kochi">高知県 高知市</option>
+        </optgroup>
+        <optgroup label="── 九州・沖縄">
+          <option value="40|33.5904|130.4017|Fukuoka">福岡県 福岡市</option>
+          <option value="40|33.8834|130.8751|Fukuoka">福岡県 北九州市</option>
+          <option value="41|33.2635|130.2996|Saga">佐賀県 佐賀市</option>
+          <option value="42|32.7448|129.8737|Nagasaki">長崎県 長崎市</option>
+          <option value="43|32.7898|130.7417|Kumamoto">熊本県 熊本市</option>
+          <option value="44|33.2382|131.6126|Oita">大分県 大分市</option>
+          <option value="45|31.9111|131.4239|Miyazaki">宮崎県 宮崎市</option>
+          <option value="46|31.5966|130.5571|Kagoshima">鹿児島県 鹿児島市</option>
+          <option value="47|26.2124|127.6809|Okinawa">沖縄県 那覇市</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="loc-mode" id="locMode">
+      <button class="loc-btn active" data-mode="all">全て</button>
+      <button class="loc-btn" data-mode="offline">会場あり</button>
+      <button class="loc-btn" data-mode="online">オンラインのみ</button>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ CATEGORY BAR ═══ -->
+<nav class="cat-bar">
+  <div class="cat-inner" id="catBar"></div>
+</nav>
+
+<!-- ═══ MAIN ═══ -->
+<main class="main">
+
+  <div id="loadingState" class="state-box">
+    <div class="spinner"></div>
+    <p>Doorkeeperからイベント情報を取得中…</p>
+  </div>
+
+  <div id="errorState" class="state-box" style="display:none">
+    <div class="state-icon">⚠️</div>
+    <h3>イベント情報を取得できませんでした</h3>
+    <p id="errorMsg">ネットワークエラーです。</p>
+    <button class="retry-btn" onclick="loadEvents()">再試行</button>
+  </div>
+
+  <div id="content" style="display:none">
+    <div class="interest-box">
+      <h2>🎯 気になるテーマで絞り込む（複数選択可）</h2>
+      <p>選んだテーマに近いイベントが「⭐ おすすめ」バッジ付きで上位表示されます</p>
+      <div class="itags" id="interestTags">
+        <button class="itag active" data-i="AI・機械学習">🤖 AI・機械学習</button>
+        <button class="itag" data-i="ロボティクス">🦾 ロボティクス</button>
+        <button class="itag" data-i="宇宙・天文">🚀 宇宙・天文</button>
+        <button class="itag" data-i="生物・医療">🧬 生物・医療</button>
+        <button class="itag" data-i="量子コンピュータ">⚛️ 量子コンピュータ</button>
+        <button class="itag" data-i="Web・プログラミング">💻 Web・プログラミング</button>
+        <button class="itag" data-i="数学・統計">📐 数学・統計</button>
+        <button class="itag" data-i="ものづくり・電子工作">🔧 ものづくり</button>
+        <button class="itag" data-i="環境・サステナ">🌱 環境・サステナ</button>
+        <button class="itag" data-i="子供STEM・教育">👦 子供STEM・教育</button>
+        <button class="itag" data-i="データサイエンス">📊 データサイエンス</button>
+        <button class="itag" data-i="セキュリティ">🔐 セキュリティ</button>
+      </div>
+    </div>
+
+    <div class="sec-hd">
+      <h2 class="sec-title" id="secLabel">すべてのイベント</h2>
+      <div class="sec-count"><span id="resCount">0</span> 件</div>
+    </div>
+    <div class="tag-row" id="tagRow"></div>
+    <div class="ev-grid" id="evGrid"></div>
+    <div id="emptyState" style="display:none;text-align:center;padding:48px 20px;color:var(--muted)">
+      <div style="font-size:48px;margin-bottom:12px">🔍</div>
+      <h3 style="font-size:17px;color:var(--text);margin-bottom:8px">該当するイベントがありません</h3>
+      <p>キーワードやカテゴリを変えてみてください</p>
+    </div>
+    <div class="load-more" id="loadMore" style="display:none">
+      <button onclick="showMore()">さらに表示する</button>
+    </div>
+
+    <!-- ═══ Venue & Research City Links ═══ -->
+    <section class="venues-sec">
+      <h2>🏛 主要会場・研究都市のイベント情報</h2>
+      <p>大規模展示会・学術シンポジウム・科学博物館などは Doorkeeper に出ない情報も多いので、各会場の公式カレンダーも合わせてチェック！</p>
+
+      <div class="v-region">
+        <h3>関東・首都圏</h3>
+        <div class="v-grid">
+          <a class="v-card" href="https://www.bigsight.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>東京ビッグサイト</strong><span>展示会・国際見本市（CEATEC等）</span></a>
+          <a class="v-card" href="https://www.m-messe.co.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>幕張メッセ</strong><span>大規模展示会・コンベンション</span></a>
+          <a class="v-card" href="https://www.pacifico.co.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>パシフィコ横浜</strong><span>学会・国際会議</span></a>
+          <a class="v-card" href="https://www.epochal.or.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>つくば国際会議場</strong><span>学研都市・科学カンファレンス</span></a>
+          <a class="v-card" href="https://www.jsf.or.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>科学技術館（北の丸）</strong><span>科学教育イベント</span></a>
+          <a class="v-card" href="https://www.kahaku.go.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>国立科学博物館（上野）</strong><span>特別展・標本展示</span></a>
+          <a class="v-card" href="https://www.miraikan.jst.go.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>日本科学未来館</strong><span>科学・テクノロジー体験</span></a>
+          <a class="v-card" href="https://www.jaxa.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>JAXA 公式</strong><span>宇宙関連イベント・施設公開</span></a>
+        </div>
+      </div>
+
+      <div class="v-region">
+        <h3>関西・近畿</h3>
+        <div class="v-grid">
+          <a class="v-card" href="https://www.intex-osaka.com/" onclick="return openEventUrl(this.href, event)">
+            <strong>インテックス大阪</strong><span>関西最大級の展示会場</span></a>
+          <a class="v-card" href="https://www.gco.co.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>大阪国際会議場（グランキューブ）</strong><span>国際会議・大規模カンファレンス</span></a>
+          <a class="v-card" href="https://kc-i.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>グランフロント大阪 ナレッジキャピタル</strong><span>産学連携・知的イベント</span></a>
+          <a class="v-card" href="https://www.keihanna-plaza.co.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>けいはんなプラザ</strong><span>関西文化学術研究都市の中核</span></a>
+          <a class="v-card" href="https://kick.kyoto/" onclick="return openEventUrl(this.href, event)">
+            <strong>けいはんなオープンイノベーションセンター（KICK）</strong><span>研究都市のオープン拠点</span></a>
+          <a class="v-card" href="https://www.krp.co.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>京都リサーチパーク</strong><span>京都の研究・スタートアップ拠点</span></a>
+          <a class="v-card" href="https://www.kobe-cc.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>神戸国際会議場・展示場</strong><span>医療・バイオ関連の学会多数</span></a>
+          <a class="v-card" href="https://www.osaka-info.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>大阪観光局イベント情報</strong><span>大阪府内の総合イベント案内</span></a>
+        </div>
+      </div>
+
+      <div class="v-region">
+        <h3>中部・東海</h3>
+        <div class="v-grid">
+          <a class="v-card" href="https://www.aichiskyexpo.com/" onclick="return openEventUrl(this.href, event)">
+            <strong>Aichi Sky Expo</strong><span>中部国際空港隣接の国際展示場</span></a>
+          <a class="v-card" href="https://www.nagoya-congress-center.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>名古屋国際会議場</strong><span>中部圏の学会・国際会議</span></a>
+          <a class="v-card" href="https://www.portmesse.com/" onclick="return openEventUrl(this.href, event)">
+            <strong>ポートメッセなごや</strong><span>名古屋の総合展示場</span></a>
+        </div>
+      </div>
+
+      <div class="v-region">
+        <h3>九州・北海道</h3>
+        <div class="v-grid">
+          <a class="v-card" href="https://www.marinemesse.or.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>マリンメッセ福岡</strong><span>九州最大級のコンベンション施設</span></a>
+          <a class="v-card" href="https://www.acros.or.jp/" onclick="return openEventUrl(this.href, event)">
+            <strong>アクロス福岡</strong><span>福岡の文化交流拠点</span></a>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer class="footer">
+  <p><strong>EventHub</strong> — 理系・知的好奇心のためのイベント情報まとめ</p>
+  <p style="margin-top:6px">
+    イベント情報は <a href="https://www.doorkeeper.jp" target="_blank">Doorkeeper</a> より取得しています。
+    最新情報・参加申込は各イベントページをご確認ください。
+  </p>
+</footer>
+
+<script>
+/* ═══════════════════════════════
+   CONSTANTS
+═══════════════════════════════ */
+const CATS = [
+  { id:'all',       icon:'📋', label:'すべて'       },
+  { id:'tech',      icon:'💻', label:'テクノロジー'   },
+  { id:'science',   icon:'🔬', label:'科学・理工'     },
+  { id:'education', icon:'📚', label:'子供・教育'     },
+  { id:'art',       icon:'🎨', label:'アート・展示'   },
+  { id:'academic',  icon:'🎓', label:'学術・研究'     },
+  { id:'music',     icon:'🎵', label:'音楽・エンタメ' },
+  { id:'sports',    icon:'⚽', label:'スポーツ'       },
+  { id:'food',      icon:'🍽️', label:'グルメ'         },
+];
+
+const THUMB = { tech:'💻', science:'🔬', education:'📚', art:'🎨',
+                academic:'🎓', music:'🎵', sports:'⚽', food:'🍽️' };
+
+// Category auto-detect patterns (title + catch text)
+const CAT_PAT = {
+  science:   /量子|宇宙|天文|惑星|ロケット|科学|生物|化学|物理|ゲノム|dna|医療|医学|工学|理工|気候|環境科学/i,
+  education: /子供|こども|小学|中学|高校|ジュニア|キッズ|youth|kids|保護者|親子|教育|教室|スクール|stem|入門|beginner|ビギナー|初心者|入門/i,
+  art:       /アート|デザイン|クリエイティブ|メディアアート|デジタルアート|映像|イラスト|UI\/UX|ux|ui/i,
+  academic:  /学会|シンポジウム|研究発表|論文|カンファレンス|学術/i,
+  music:     /音楽|ライブ|コンサート|dtm|作曲|演奏|バンド/i,
+  sports:    /スポーツ|マラソン|ランニング|フットサル|バスケ|野球|サッカー|体育/i,
+  food:      /グルメ|食|料理|cooking|発酵|フード|ワイン|日本酒|ビール/i,
+};
+
+// Interest tag patterns
+const TAG_PAT = [
+  [/AI|人工知能|機械学習|deep.?learn|ディープ|llm|gpt|claude|chatgpt|生成AI|生成ai/i, 'AI・機械学習'],
+  [/ロボ|robot/i,                                                                        'ロボティクス'],
+  [/宇宙|天文|惑星|望遠鏡|jaxa|nasa|ロケット/i,                                         '宇宙・天文'],
+  [/生物|医療|医学|ゲノム|dna|rna|crispr|バイオ|細胞/i,                                 '生物・医療'],
+  [/量子|quantum/i,                                                                       '量子コンピュータ'],
+  [/web|javascript|typescript|react|vue|next|svelte|html|css|python|go|rust|ruby|php|プログラミング|コーディング/i, 'Web・プログラミング'],
+  [/統計|数学|数理|確率|数値解析|線形代数/i,                                             '数学・統計'],
+  [/電子工作|arduino|raspberry|fpga|回路|基板|iot|組み込み|マイコン/i,                  'ものづくり・電子工作'],
+  [/環境|サステナ|エコ|カーボン|再生可能|脱炭素|sdgs/i,                                 '環境・サステナ'],
+  [/子供|教育|stem|kids|こども|プログラミング教室|scratch/i,                            '子供STEM・教育'],
+  [/データ分析|データサイエンス|データエンジニア|pandas|numpy|spark|bigquery/i,          'データサイエンス'],
+  [/セキュリティ|ctf|脆弱性|ペネトレ|ハッキング|暗号|インシデント/i,                    'セキュリティ'],
+  [/クラウド|aws|gcp|azure|インフラ|devops|docker|kubernetes|k8s|terraform/i,           'クラウド・インフラ'],
+];
+
+/* ═══════════════════════════════
+   外部ソース設定（案1 / 案2）
+   ─ 案2: GitHub Actions が生成する静的JSON（同一オリジン／GitHub Pages）
+   ─ 案1: WordPress に置いた PHP プロキシ（connpass 等をサーバ側で集約）
+   いずれも Doorkeeper 互換のイベント配列を返す前提。
+   到達できないソースは自動スキップするので、未設置でも動作する。
+═══════════════════════════════ */
+const EXT_SOURCES = [
+  // 案2: 同一ディレクトリの events.json（GitHub Actions が日次更新）
+  { url: './events.json', label: 'aggregated' },
+
+  // 案1: PHPプロキシ集約モード（設置後にコメント解除＆URL差し替え）
+  // { url: 'https://YOUR-WP-SITE/wp-content/uploads/event-hub/event-proxy.php?mode=aggregate', label: 'proxy' },
+];
+
+/* ═══════════════════════════════
+   STATE
+═══════════════════════════════ */
+const S = {
+  raw:      [],
+  filtered: [],
+  shown:    0,
+  PAGE:     20,
+  cat:      'all',
+  search:   '',
+  ints:     new Set(['AI・機械学習']),
+  city:     null,      // { pref, lat, lon, prefEN }
+  locMode:  'all',     // 'all' | 'offline' | 'online'
+};
+
+/* ═══════════════════════════════
+   INIT
+═══════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  buildCatBar();
+  bindUI();
+  loadEvents();
+});
+
+function bindUI() {
+  document.getElementById('searchInput').addEventListener('input', e => {
+    S.search = e.target.value.toLowerCase().trim();
+    applyFilters();
+  });
+  document.getElementById('citySelect').addEventListener('change', onCityChange);
+  document.querySelectorAll('#locMode .loc-btn').forEach(btn =>
+    btn.addEventListener('click', () => setLocMode(btn.dataset.mode))
+  );
+  document.querySelectorAll('.itag').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.i;
+      S.ints.has(v) ? (S.ints.delete(v), btn.classList.remove('active'))
+                    : (S.ints.add(v),    btn.classList.add('active'));
+      applyFilters();
+    })
+  );
+}
+
+function onCityChange() {
+  const val = document.getElementById('citySelect').value;
+  if (!val) { S.city = null; loadEvents(); return; }
+  const [pref, lat, lon, prefEN] = val.split('|');
+  S.city = { pref: +pref, lat: +lat, lon: +lon, prefEN };
+  loadEvents();
+}
+
+function setLocMode(mode) {
+  const wasOnline = S.locMode === 'online';
+  const nowOnline = mode === 'online';
+  S.locMode = mode;
+  document.querySelectorAll('#locMode .loc-btn').forEach(btn =>
+    btn.classList.toggle('active', btn.dataset.mode === mode)
+  );
+  // Refetch only when switching to/from "online-only" with a city selected,
+  // because online mode ignores the prefecture filter (location is irrelevant).
+  if (S.city && wasOnline !== nowOnline) loadEvents();
+  else applyFilters();
+}
+
+/* ═══════════════════════════════
+   FETCH — Doorkeeper API
+═══════════════════════════════ */
+async function loadEvents() {
+  show('loading');
+  try {
+    // Doorkeeper（直接）＋ 外部ソース（案1/案2）を並行取得してマージ
+    const results = await Promise.allSettled([
+      fetchDoorkeeper(),
+      ...EXT_SOURCES.map(s => fetchExternal(s)),
+    ]);
+
+    const seen = new Map();
+    let dkFailed = null;
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        for (const ev of r.value) if (ev && !seen.has(ev.id)) seen.set(ev.id, ev);
+      } else if (i === 0) {
+        dkFailed = r.reason;   // Doorkeeper本体の失敗だけ記録
+      }
+    });
+
+    // 何も取れなかった場合のみエラー表示
+    if (!seen.size) {
+      throw dkFailed || new Error('イベントが0件でした（しばらく待ってから再試行してください）');
+    }
+
+    S.raw = [...seen.values()];
+    applyFilters();
+    show('content');
+  } catch(e) {
+    document.getElementById('errorMsg').textContent = e.message;
+    show('error');
+  }
+}
+
+/* ═══════════════════════════════
+   FETCH — 外部ソース（案1 PHPプロキシ / 案2 静的JSON）
+   Doorkeeper互換の配列（{event:{...}} もしくは {...} の配列）を受け取り、
+   normalizeEv で同一スキーマに整形して返す。失敗時は空配列。
+═══════════════════════════════ */
+async function fetchExternal(src) {
+  try {
+    const r = await fetch(src.url, { cache: 'no-store' });
+    if (!r.ok) return [];
+    const data = await r.json();
+    // 受理形式: [ev,...] / [{event:ev},...] / {events:[...]} のいずれでも可
+    let arr = Array.isArray(data) ? data : (data.events || []);
+    arr = arr.map(x => (x && x.event) ? x.event : x).filter(Boolean);
+
+    const out = [];
+    for (const ev of arr) {
+      const n = normalizeEv(ev);
+      // 外部ソースは id が他ソースと衝突しないよう接頭辞を付与
+      if (n.id == null) continue;
+      n.id = `${src.label}:${n.id}`;
+      // 終了済みイベントは除外（過去日）
+      if (n.dateRaw && new Date(n.dateRaw) < new Date()) continue;
+      out.push(n);
+    }
+    return out;
+  } catch (e) {
+    return [];   // 未設置・到達不可・JSON不正などは静かにスキップ
+  }
+}
+
+async function fetchDoorkeeper() {
+  const now    = new Date().toISOString();
+  const prefEN = (S.locMode !== 'online' && S.city?.prefEN) || null;
+
+  // Doorkeeperはレート制限があるので、キーワードは厳選＋小バッチ並列で取得
+  const queries = [
+    '', '勉強会', 'ハンズオン',
+    'AI', 'プログラミング', 'データ', 'セキュリティ',
+    '科学', '宇宙', 'ロボット', 'バイオ',
+    'カンファレンス', 'シンポジウム', '展示会',
+    'けいはんな', 'つくば', 'インテックス', '万博', '大阪',
+  ];
+
+  const fetchOne = async (q, retries = 2) => {
+    const p = new URLSearchParams({
+      locale:'ja', sort:'starts_at', per_page:50, starts_after:now
+    });
+    if (prefEN) p.set('prefecture', prefEN);
+    if (q)      p.set('q', q);
+    try {
+      const r   = await fetch(`https://api.doorkeeper.jp/events?${p}`);
+      const txt = await r.text();
+      if (/^Retry later/i.test(txt)) {
+        if (retries > 0) {
+          await new Promise(rs => setTimeout(rs, 800));
+          return fetchOne(q, retries - 1);
+        }
+        return [];
+      }
+      const arr = JSON.parse(txt);
+      return Array.isArray(arr) ? arr.map(x => x.event) : [];
+    } catch (e) {
+      return [];
+    }
+  };
+
+  // 4並列ずつバッチ処理（レート制限対策）
+  const CONCURRENT = 4, DELAY_MS = 350;
+  const batches = [];
+  for (let i = 0; i < queries.length; i += CONCURRENT) {
+    const chunk = queries.slice(i, i + CONCURRENT);
+    const res   = await Promise.all(chunk.map(q => fetchOne(q)));
+    batches.push(...res);
+    if (i + CONCURRENT < queries.length) {
+      await new Promise(r => setTimeout(r, DELAY_MS));
+    }
+  }
+
+  const seen = new Map();
+  for (const batch of batches) {
+    for (const ev of batch) {
+      if (ev && !seen.has(ev.id)) seen.set(ev.id, normalizeEv(ev));
+    }
+  }
+  if (!seen.size) throw new Error('イベントが0件でした（しばらく待ってから再試行してください）');
+  return [...seen.values()];
+}
+
+/* ═══════════════════════════════
+   NORMALIZE
+═══════════════════════════════ */
+function normalizeEv(ev) {
+  const txt    = (ev.title || '') + ' ' + stripHtml(ev.description || '');
+  const cat    = autoCat(txt);
+  const tags   = autoTags(txt);
+  const isOnline = !ev.lat && !ev.long &&
+    /オンライン|online|リモート|ウェビナー|webinar|zoom|meet|teams/i.test(txt);
+
+  return {
+    id:        ev.id,
+    title:     ev.title || '（タイトルなし）',
+    desc:      stripHtml(ev.description || '').slice(0, 200),
+    dateStr:   fmtDate(ev.starts_at),
+    dateRaw:   ev.starts_at,
+    loc:       ev.address || ev.venue_name || (isOnline ? 'オンライン' : '会場未定'),
+    lat:       ev.lat   ? +ev.lat   : null,
+    lon:       ev.long  ? +ev.long  : null,
+    distance:  null,
+    limit:     ev.ticket_limit  || 0,
+    accepted:  ev.participants   || 0,
+    banner:    ev.banner         || null,
+    url:       ev.public_url,
+    cat,
+    tags,
+    isOnline,
+    isSoon:    isSoon(ev.starts_at),
+  };
+}
+
+function autoCat(txt) {
+  for (const [id, pat] of Object.entries(CAT_PAT)) if (pat.test(txt)) return id;
+  return 'tech';
+}
+
+function autoTags(txt) {
+  return TAG_PAT.filter(([p]) => p.test(txt)).map(([,t]) => t);
+}
+
+function stripHtml(h) {
+  return h.replace(/<[^>]*>/g,'').replace(/&[a-z#0-9]+;/gi,' ').replace(/\s+/g,' ').trim();
+}
+
+function fmtDate(s) {
+  const d = new Date(s);
+  const w = ['日','月','火','水','木','金','土'][d.getDay()];
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${w})`;
+}
+
+function isSoon(s) {
+  const ms = new Date(s) - new Date();
+  return ms > 0 && ms < 10*86400*1000;
+}
+
+/* ═══════════════════════════════
+   DISTANCE
+═══════════════════════════════ */
+function haversine(la1,lo1,la2,lo2) {
+  const R=6371,r=Math.PI/180,dLa=(la2-la1)*r,dLo=(lo2-lo1)*r;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function distLabel(km) {
+  if (km===null) return null;
+  if (km<1)   return '〜1km';
+  if (km<10)  return `約${Math.round(km)}km`;
+  if (km<50)  return `約${Math.round(km/5)*5}km`;
+  if (km<200) return `約${Math.round(km/10)*10}km`;
+  return `約${Math.round(km/50)*50}km`;
+}
+
+function attachDist(evs) {
+  evs.forEach(e => {
+    e.distance = (S.city && e.lat && e.lon)
+      ? haversine(S.city.lat, S.city.lon, e.lat, e.lon)
+      : null;
+  });
+}
+
+/* ═══════════════════════════════
+   FILTER + SORT
+═══════════════════════════════ */
+function applyFilters() {
+  let evs = [...S.raw];
+
+  if (S.locMode === 'offline') evs = evs.filter(e => !e.isOnline);
+  else if (S.locMode === 'online') evs = evs.filter(e => e.isOnline);
+  if (S.cat !== 'all') evs = evs.filter(e => e.cat === S.cat);
+  if (S.search) evs = evs.filter(e =>
+    e.title.toLowerCase().includes(S.search) ||
+    e.desc.toLowerCase().includes(S.search)  ||
+    e.loc.toLowerCase().includes(S.search)   ||
+    e.tags.some(t => t.toLowerCase().includes(S.search))
+  );
+
+  attachDist(evs);
+
+  const rec = e => S.ints.size > 0 && e.tags.some(t => S.ints.has(t));
+  evs.sort((a,b) => {
+    const dr = (rec(a)?0:1)-(rec(b)?0:1);
+    if (dr) return dr;
+    if (S.city) {
+      const ad = a.distance??1e9, bd = b.distance??1e9;
+      if (Math.abs(ad-bd)>0.5) return ad-bd;
+    }
+    return new Date(a.dateRaw)-new Date(b.dateRaw);
+  });
+
+  S.filtered = evs;
+  S.shown    = S.PAGE;
+  renderCatBar();
+  renderTagRow();
+  renderGrid();
+}
+
+/* ═══════════════════════════════
+   CATEGORY BAR
+═══════════════════════════════ */
+function buildCatBar() {
+  document.getElementById('catBar').innerHTML = CATS.map(c =>
+    `<button class="cat-btn${c.id===S.cat?' active':''}" onclick="selectCat('${c.id}')">
+       ${c.icon} ${c.label} <span class="cat-pill" id="cp-${c.id}">0</span>
+     </button>`
+  ).join('');
+}
+
+function renderCatBar() {
+  const base = S.raw.filter(e => {
+    if (S.locMode === 'offline') return !e.isOnline;
+    if (S.locMode === 'online')  return  e.isOnline;
+    return true;
+  });
+  CATS.forEach(c => {
+    const el  = document.getElementById(`cp-${c.id}`);
+    const btn = document.querySelector(`.cat-btn[onclick="selectCat('${c.id}')"]`);
+    if (!el||!btn) return;
+    el.textContent  = c.id==='all' ? base.length : base.filter(e=>e.cat===c.id).length;
+    btn.className   = `cat-btn${c.id===S.cat?' active':''}`;
+  });
+}
+
+function selectCat(id) {
+  S.cat = id;
+  const ci = CATS.find(c=>c.id===id);
+  document.getElementById('secLabel').textContent =
+    id==='all' ? 'すべてのイベント' : `${ci.icon} ${ci.label}`;
+  applyFilters();
+}
+
+/* ═══════════════════════════════
+   TAG ROW
+═══════════════════════════════ */
+function renderTagRow() {
+  const tags = [...new Set(S.filtered.flatMap(e=>e.tags))].slice(0,20);
+  document.getElementById('tagRow').innerHTML = tags.map(t =>
+    `<button class="ftag${S.ints.has(t)?' active':''}" onclick="toggleTag('${t}')">${t}</button>`
+  ).join('');
+}
+
+function toggleTag(t) {
+  S.ints.has(t) ? S.ints.delete(t) : S.ints.add(t);
+  document.querySelectorAll('.itag').forEach(b =>
+    b.classList.toggle('active', S.ints.has(b.dataset.i))
+  );
+  applyFilters();
+}
+
+/* ═══════════════════════════════
+   EVENTS GRID
+═══════════════════════════════ */
+function renderGrid() {
+  const grid  = document.getElementById('evGrid');
+  const empty = document.getElementById('emptyState');
+  const more  = document.getElementById('loadMore');
+  document.getElementById('resCount').textContent = S.filtered.length;
+
+  if (!S.filtered.length) {
+    grid.innerHTML = '';
+    empty.style.display = '';
+    more.style.display  = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  grid.innerHTML = S.filtered.slice(0, S.shown).map(cardHTML).join('');
+  more.style.display  = S.shown < S.filtered.length ? '' : 'none';
+}
+
+function showMore() {
+  S.shown = Math.min(S.shown + S.PAGE, S.filtered.length);
+  renderGrid();
+}
+
+/* ═══════════════════════════════
+   CARD HTML
+═══════════════════════════════ */
+function cardHTML(e) {
+  const ci   = CATS.find(c=>c.id===e.cat)||CATS[1];
+  const isR  = S.ints.size>0 && e.tags.some(t=>S.ints.has(t));
+  const dl   = distLabel(e.distance);
+  const seat = seatsTag(e);
+
+  const thumb = e.banner
+    ? `<img class="card-thumb-img" src="${esc(e.banner)}" alt="" loading="lazy"
+            onerror="this.parentNode.innerHTML=fallbackThumb('${e.cat}')">`
+    : `<div class="card-thumb-grad g-${e.cat}"><span class="thumb-icon">${THUMB[e.cat]||'📋'}</span></div>`;
+
+  const safeUrl = esc(e.url);
+  return `
+  <div class="ev-card${isR?' highlight':''}" onclick="openEventUrl('${safeUrl}', event)">
+    <div class="card-thumb">
+      ${thumb}
+      <span class="badge t-${e.cat}">${ci.icon} ${ci.label}</span>
+      ${e.isOnline && !e.isSoon ? '<span class="badge-online">🖥 オンライン</span>' : ''}
+      ${e.isSoon ? '<span class="badge-soon">間近！</span>' : ''}
+      ${dl   ? `<span class="badge-dist">📍 ${dl}</span>`     : ''}
+      ${isR  ? '<span class="badge-rec">⭐ おすすめ</span>'   : ''}
+    </div>
+    <div class="card-body">
+      <h3 class="card-title">${esc(e.title)}</h3>
+      <p class="card-desc">${esc(e.desc)||'詳細はイベントページをご確認ください'}</p>
+      <div class="card-meta">
+        <div>📅 ${e.dateStr}</div>
+        <div>📍 ${esc(e.loc)}</div>
+        ${seat?`<div>${seat}</div>`:''}
+      </div>
+    </div>
+    <div class="card-footer">
+      <span class="card-src">📰 Doorkeeper</span>
+      <a class="card-link" href="${safeUrl}" onclick="return openEventUrl('${safeUrl}', event)">詳細・申込 →</a>
+    </div>
+  </div>`;
+}
+
+function fallbackThumb(cat) {
+  return `<div class="card-thumb-grad g-${cat}"><span class="thumb-icon">${THUMB[cat]||'📋'}</span></div>`;
+}
+
+function seatsTag(e) {
+  if (!e.limit) return '';
+  const rem = e.limit - e.accepted;
+  if (rem<=0) return `<span class="card-seats full">満員</span>`;
+  if (rem<=5) return `<span class="card-seats warn">残り${rem}席</span>`;
+  return `<span class="card-seats">残${rem}席/${e.limit}</span>`;
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ═══════════════════════════════
+   OPEN EVENT URL (with preview-env detection)
+═══════════════════════════════ */
+function openEventUrl(url, evt) {
+  if (evt) { evt.preventDefault(); evt.stopPropagation(); }
+  const host = location.hostname;
+  const isPreview = ['localhost','127.0.0.1','0.0.0.0',''].includes(host);
+  if (isPreview) {
+    showPreviewNotice(url);
+    return false;
+  }
+  window.open(url, '_blank', 'noopener');
+  return false;
+}
+
+function showPreviewNotice(url) {
+  let n = document.getElementById('previewNotice');
+  if (!n) {
+    n = document.createElement('div');
+    n.id = 'previewNotice';
+    n.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);'
+      + 'background:#1e293b;color:#fff;padding:14px 20px;border-radius:10px;'
+      + 'box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:9999;max-width:520px;font-size:13px;'
+      + 'line-height:1.5;border:2px solid #60a5fa;';
+    document.body.appendChild(n);
+  }
+  n.innerHTML = `
+    <div style="font-weight:700;margin-bottom:6px;color:#60a5fa">🔒 プレビュー環境では外部リンクを開けません</div>
+    <div style="margin-bottom:8px">本番のWordPressサイトに設置すれば、クリックでイベント詳細ページへ正常に遷移します。</div>
+    <div style="background:#0f172a;padding:6px 10px;border-radius:5px;font-size:11px;font-family:monospace;word-break:break-all;margin-bottom:8px;color:#94a3b8">${esc(url)}</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button id="pnCopyBtn" type="button"
+              style="background:#3b82f6;color:#fff;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700">URLをコピー</button>
+      <button type="button" onclick="document.getElementById('previewNotice').remove()"
+              style="background:transparent;color:#94a3b8;border:1px solid #334155;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:11px">閉じる</button>
+    </div>`;
+  // URLは文字列エスケープ事故を避けるためJS側で直接バインド
+  const copyBtn = n.querySelector('#pnCopyBtn');
+  copyBtn.onclick = () => copyToClipboard(url, copyBtn);
+  clearTimeout(window._previewNoticeT);
+  window._previewNoticeT = setTimeout(() => n.remove(), 8000);
+}
+
+/* セキュアでない環境(http)でも動くコピー処理 */
+async function copyToClipboard(text, btn) {
+  const ok = () => { if (btn) { btn.textContent = 'コピー済み✓'; btn.style.background = '#16a34a'; } };
+  const ng = () => { if (btn) { btn.textContent = 'コピー失敗'; btn.style.background = '#dc2626'; } };
+
+  // ① 可能なら標準API（https / localhost のみ有効）
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); ok(); return; } catch (e) { /* fallback */ }
+  }
+  // ② フォールバック: 一時textarea + execCommand('copy')
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const success = document.execCommand('copy');
+    document.body.removeChild(ta);
+    success ? ok() : ng();
+  } catch (e) {
+    ng();
+  }
+}
+
+/* ═══════════════════════════════
+   SHOW STATE
+═══════════════════════════════ */
+function show(st) {
+  document.getElementById('loadingState').style.display = st==='loading' ? '':'none';
+  document.getElementById('errorState').style.display   = st==='error'   ? '':'none';
+  document.getElementById('content').style.display      = st==='content' ? '':'none';
+}
+</script>
+</body>
+</html>

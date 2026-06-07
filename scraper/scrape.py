@@ -18,8 +18,10 @@ EventHub — イベント集約スクレイパー（案2 / GitHub Actions 日次
 
 import json
 import os
+import ssl
 import sys
 import time
+import hashlib
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -48,13 +50,29 @@ UA = "EventHub-Scraper/1.0 (+https://rbelgblog.com/event-hub/)"
 
 
 def http_get_text(url, headers=None, timeout=20):
-    """生テキスト(HTML/XML)を取得。失敗時 None。"""
+    """生テキスト(HTML/XML)を取得。失敗時 None。
+    証明書チェーンが不完全なサイト（例: けいはんなプラザ）向けに、
+    検証失敗時は検証なしで再取得する（公開情報の閲覧のみ）。"""
     req = urllib.request.Request(url, headers={"User-Agent": UA, **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read().decode("utf-8", "replace")
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
-        sys.stderr.write(f"[warn] GET(text) failed {url[:80]}... : {e}\n")
+    except urllib.error.URLError as e:
+        if "CERTIFICATE_VERIFY_FAILED" in str(e) or isinstance(
+                getattr(e, "reason", None), ssl.SSLError):
+            try:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+                    return r.read().decode("utf-8", "replace")
+            except Exception as e2:
+                sys.stderr.write(f"[warn] GET(text,noverify) failed {url[:70]} : {e2}\n")
+                return None
+        sys.stderr.write(f"[warn] GET(text) failed {url[:70]} : {e}\n")
+        return None
+    except (urllib.error.HTTPError, TimeoutError) as e:
+        sys.stderr.write(f"[warn] GET(text) failed {url[:70]} : {e}\n")
         return None
 
 
@@ -327,9 +345,171 @@ def parse_atc_dates(date_str, time_str):
     return starts_at, ends_at
 
 
+# ── 日本語日付パーサ（「YYYY年M月D日」系。範囲・カンマ列対応）──────
+_Z2H = str.maketrans("０１２３４５６７８９", "0123456789")
+_JP_FULL = re.compile(r"(\d{4})年(\d{1,2})月(\d{1,2})日")
+_JP_TOKEN = re.compile(r"(\d{4})年(\d{1,2})月(\d{1,2})日|(\d{1,2})月(\d{1,2})日|(\d{1,2})日")
+_JP_TIME = re.compile(r"(\d{1,2}):(\d{2})")
+
+
+def parse_jp_dates(date_str, time_str=""):
+    """「2026年6月6日（土）、7日（日）、20日…」「…日(金) - …日(土)」等から
+    開始ISO・終了ISOを推定。年月はトークン走査で引き継ぐ。"""
+    if not date_str:
+        return None, None
+    s = date_str.translate(_Z2H)
+    m0 = _JP_FULL.search(s)
+    if not m0:
+        return None, None
+    y, mo, d = int(m0.group(1)), int(m0.group(2)), int(m0.group(3))
+    hh = mm = 0
+    tm = _JP_TIME.search((time_str or "").translate(_Z2H))
+    if tm:
+        hh, mm = int(tm.group(1)), int(tm.group(2))
+    starts_at = f"{y:04d}-{mo:02d}-{d:02d}T{hh:02d}:{mm:02d}:00+09:00"
+
+    cy, cm, last = y, mo, (y, mo, d)
+    for tok in _JP_TOKEN.finditer(s[m0.end():]):
+        if tok.group(1):
+            cy, cm, cd = int(tok.group(1)), int(tok.group(2)), int(tok.group(3))
+        elif tok.group(4):
+            cm, cd = int(tok.group(4)), int(tok.group(5))
+        else:
+            cd = int(tok.group(6))
+        last = (cy, cm, cd)
+    ends_at = None
+    if last != (y, mo, d):
+        ly, lm, ld = last
+        ends_at = f"{ly:04d}-{lm:02d}-{ld:02d}T23:59:00+09:00"
+    return starts_at, ends_at
+
+
+def _hid(prefix, *parts):
+    h = hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()[:10]
+    return prefix + h
+
+
+# ── けいはんなプラザ（公式イベント一覧 1ページに数か月分）──────────
+KEIHANNA_URL = "https://www.keihanna-plaza.co.jp/event/"
+KEIHANNA_LAT, KEIHANNA_LON = 34.7402, 135.7790
+
+_KH_ARTICLE = re.compile(r'<article class="event-article">(.*?)</article>', re.S)
+_KH_HEADER = re.compile(r"<header>(.*?)</header>", re.S)
+_KH_TITLE_A = re.compile(r'<h4 class="event-title">\s*<a href="(.*?)">(.*?)</a>', re.S)
+_KH_TITLE = re.compile(r'<h4 class="event-title">(.*?)</h4>', re.S)
+_KH_VENUE = re.compile(r"会場</th>\s*<td[^>]*>(.*?)</td>", re.S)
+
+
+def fetch_keihanna():
+    html = http_get_text(KEIHANNA_URL)
+    if not html:
+        return []
+    out = {}
+    for block in _KH_ARTICLE.findall(html):
+        ma = _KH_TITLE_A.search(block)
+        if ma:
+            url, title = ma.group(1).strip(), strip(ma.group(2))
+        else:
+            mt = _KH_TITLE.search(block)
+            if not mt:
+                continue
+            url, title = KEIHANNA_URL, strip(mt.group(1))
+        if not title:
+            continue
+        mh = _KH_HEADER.search(block)
+        starts_at, ends_at = parse_jp_dates(strip(mh.group(1)) if mh else "")
+        if not starts_at:
+            continue
+        mv = _KH_VENUE.search(block)
+        venue = strip(mv.group(1)) if mv else "けいはんなプラザ"
+        eid = _hid("kh", title, starts_at)
+        out[eid] = {
+            "id": eid,
+            "title": title,
+            "description": f"会場: {venue}（けいはんなプラザ／関西文化学術研究都市）",
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+            "address": f"{venue} / けいはんなプラザ（京都府精華町）",
+            "venue_name": venue or "けいはんなプラザ",
+            "lat": KEIHANNA_LAT,
+            "long": KEIHANNA_LON,
+            "ticket_limit": 0,
+            "participants": 0,
+            "banner": None,
+            "public_url": url,
+            "source": "keihanna",
+        }
+    sys.stderr.write(f"[info] けいはんな: {len(out)} events\n")
+    return list(out.values())
+
+
+# ── つくばエキスポセンター（一覧→各詳細ページで開催日を取得）──────
+EXPO_LIST = "https://www.expocenter.or.jp/event/list/"
+EXPO_LAT, EXPO_LON = 36.0865, 140.1081
+
+_EXPO_LINK = re.compile(r"/event/detail/id=(\d+)")
+_EXPO_OG_TITLE = re.compile(r'<meta property="og:title" content="(.*?)"', re.S)
+_EXPO_CONTS = re.compile(r'<h3 class="ttl">\s*([^<]+?)\s*</h3>\s*<div class="txt">(.*?)</div>', re.S)
+
+
+def fetch_expocenter(delay=0.4):
+    listing = http_get_text(EXPO_LIST)
+    if not listing:
+        return []
+    ids, seen = [], set()
+    for m in _EXPO_LINK.finditer(listing):
+        i = m.group(1)
+        if i not in seen:
+            seen.add(i)
+            ids.append(i)
+    out = {}
+    for i in ids:
+        url = f"https://www.expocenter.or.jp/event/detail/id={i}"
+        html = http_get_text(url)
+        time.sleep(delay)
+        if not html:
+            continue
+        ev = parse_expo_event(html, url, i)
+        if ev:
+            out[ev["id"]] = ev
+    sys.stderr.write(f"[info] つくばエキスポ: {len(out)} events ({len(ids)} pages)\n")
+    return list(out.values())
+
+
+def parse_expo_event(html, url, eid_num):
+    mt = _EXPO_OG_TITLE.search(html)
+    title = _htmlmod.unescape(mt.group(1)).strip() if mt else ""
+    if not title:
+        return None
+    fields = {strip(k): strip(v) for k, v in _EXPO_CONTS.findall(html)}
+    starts_at, ends_at = parse_jp_dates(fields.get("開催日", ""), fields.get("開催時間", ""))
+    if not starts_at:
+        return None
+    place = fields.get("場所", "")
+    return {
+        "id": "expo" + eid_num,
+        "title": title,
+        "description": (("会場: " + place + "｜") if place else "")
+                       + "つくばエキスポセンター（つくば研究学園都市）",
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "address": (place + " / つくばエキスポセンター") if place
+                   else "つくばエキスポセンター（茨城県つくば市）",
+        "venue_name": place or "つくばエキスポセンター",
+        "lat": EXPO_LAT,
+        "long": EXPO_LON,
+        "ticket_limit": 0,
+        "participants": 0,
+        "banner": None,
+        "public_url": url,
+        "source": "expocenter",
+    }
+
+
 def main():
     all_events = {}
-    for fetch in (fetch_doorkeeper, fetch_connpass, fetch_atc):
+    for fetch in (fetch_doorkeeper, fetch_connpass, fetch_atc,
+                  fetch_keihanna, fetch_expocenter):
         try:
             for ev in fetch():
                 if ev.get("id") and is_future(ev):

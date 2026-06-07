@@ -207,26 +207,42 @@ def is_future(ev):
         return True
 
 
-# ── ATC（大阪南港ATC）公式の公開REST APIから取得 ──────────────
-# ATCサイト自身がイベント一覧の表示に使う公開REST API(wp-json/atc/v1/events)を利用。
-# robots.txt非対象=許可。返るのは「開催中・開催予定」のみ。事実(名称/日時/会場/状態)
-# だけ取得し、詳細はATC公式ページへリンクする（説明文・画像は転載しない）。
+# ── ATC（大阪南港ATC）公開イベント一覧ページの埋め込みデータから取得 ──
+# 一覧ページ(/event/)のHTMLに、表示用イベントが "preload":[...] のJSONとして
+# 埋め込まれている（＝ブラウザが受け取る公開ソースそのもの）。これを読む。
+# ※ REST APIはデータセンターIPから弾かれることがあるため、確実なHTML経由に。
+# 「開催中・開催予定」のみ／事実(名称/日時/会場/状態)だけ取得しATC公式へリンク。
 import html as _htmlmod  # 他ソース(つくばエキスポ)の og:title 復号でも使用
 
-ATC_API = "https://www.atc-co.com/wp-json/atc/v1/events"
+ATC_LIST_URL = "https://www.atc-co.com/event/"
 ATC_LAT, ATC_LON = 34.6155, 135.4280  # 大阪南港ATCの座標（近い順ソート用）
 
 
+def _extract_preload(html):
+    i = html.find('"preload":')
+    if i < 0:
+        return []
+    start = html.find("[", i)
+    if start < 0:
+        return []
+    try:
+        arr, _ = json.JSONDecoder().raw_decode(html, start)
+        return arr if isinstance(arr, list) else []
+    except Exception as e:
+        sys.stderr.write(f"[warn] ATC preload parse failed: {e}\n")
+        return []
+
+
 def fetch_atc():
-    data = http_get_json(ATC_API)
-    if not isinstance(data, dict):
+    html = http_get_text(ATC_LIST_URL)
+    if not html:
         return []
     out = {}
-    for e in data.get("events", []):
+    for e in _extract_preload(html):
         ev = normalize_atc(e)
         if ev:
             out[ev["id"]] = ev
-    sys.stderr.write(f"[info] ATC: {len(out)} events (REST API)\n")
+    sys.stderr.write(f"[info] ATC: {len(out)} events (preload)\n")
     return list(out.values())
 
 

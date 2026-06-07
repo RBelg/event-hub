@@ -35,15 +35,18 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -n "$(git status --porcelain events.json)" ]; then
+          # events.json は毎回生成し直す成果物。マージせず「今の生成物で上書き」する。
+          cp events.json /tmp/events.json
+          for i in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main          # リモート最新に合わせる
+            cp /tmp/events.json events.json        # 今回生成した内容で上書き
+            if [ -z "$(git status --porcelain events.json)" ]; then
+              echo "No changes to events.json"; exit 0
+            fi
             git add events.json
             git commit -m "chore: update events.json ($(date -u +%FT%TZ))"
-            # 手動push等と競合してもrebaseして再試行（最大5回）
-            for i in 1 2 3 4 5; do
-              git pull --rebase --autostash origin main && git push && exit 0
-              echo "push retry $i ..."; sleep 5
-            done
-            echo "push failed after retries"; exit 1
-          else
-            echo "No changes to events.json"
-          fi
+            if git push; then exit 0; fi
+            echo "push retry $i ..."; sleep 5
+          done
+          echo "push failed after retries"; exit 1

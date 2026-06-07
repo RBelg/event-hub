@@ -207,142 +207,60 @@ def is_future(ev):
         return True
 
 
-# ── ATC（大阪南港ATC）公式サイトマップ＋公開ページから事実のみ取得 ──
-# robots.txt で /event/ は許可。検索エンジン向けに公開された公式サイトマップを使い、
-# 各イベント公式ページから「名称・日時・会場・ジャンル・公式URL」だけを取得し、
-# 詳細はATC公式へリンクする（説明文・画像は転載しない）= Googleニュース型の集約。
-import html as _htmlmod
+# ── ATC（大阪南港ATC）公式の公開REST APIから取得 ──────────────
+# ATCサイト自身がイベント一覧の表示に使う公開REST API(wp-json/atc/v1/events)を利用。
+# robots.txt非対象=許可。返るのは「開催中・開催予定」のみ。事実(名称/日時/会場/状態)
+# だけ取得し、詳細はATC公式ページへリンクする（説明文・画像は転載しない）。
+import html as _htmlmod  # 他ソース(つくばエキスポ)の og:title 復号でも使用
 
-ATC_SITEMAPS = [
-    "https://www.atc-co.com/event-sitemap.xml",
-    "https://www.atc-co.com/event-sitemap2.xml",
-]
+ATC_API = "https://www.atc-co.com/wp-json/atc/v1/events"
 ATC_LAT, ATC_LON = 34.6155, 135.4280  # 大阪南港ATCの座標（近い順ソート用）
 
-_ATC_LOC = re.compile(r"<loc>\s*(https://www\.atc-co\.com/event/event-\d+/?)\s*</loc>")
-_ATC_OG_TITLE = re.compile(r'<meta property="og:title" content="(.*?)"', re.S)
-_ATC_OG_URL = re.compile(r'<meta property="og:url" content="(.*?)"')
-_ATC_GENRE = re.compile(r'genre-badge">(.*?)</span>', re.S)
-_ATC_DATE = re.compile(r"(\d{4})\.(\d{2})\.(\d{2})")
-_ATC_DATE_MD = re.compile(r"(\d{2})\.(\d{2})")
-_ATC_TIME = re.compile(r"(\d{1,2}):(\d{2})")
 
-
-def _atc_dd(label, html):
-    m = re.search(r"<dt>\s*" + label + r"\s*</dt>\s*<dd>(.*?)</dd>", html, re.S)
-    return strip(m.group(1)) if m else ""
-
-
-def fetch_atc(max_pages=400, delay=0.4, stop_after_past=60):
-    # 1) 公式サイトマップからイベントURLを収集
-    urls, seen_u = [], set()
-    for sm in ATC_SITEMAPS:
-        xml = http_get_text(sm)
-        if not xml:
-            continue
-        for m in _ATC_LOC.finditer(xml):
-            u = m.group(1)
-            if u not in seen_u:
-                seen_u.add(u)
-                urls.append(u)
-    if not urls:
+def fetch_atc():
+    data = http_get_json(ATC_API)
+    if not isinstance(data, dict):
         return []
-
-    # 2) サイトマップは古い順なので末尾(新しい=開催予定)から処理。
-    #    終了済みが stop_after_past 件連続したら打ち切り、毎日の取得を最小化。
-    urls.reverse()
-    out, fetched, consec_past = {}, 0, 0
-    for url in urls:
-        if fetched >= max_pages:
-            break
-        html = http_get_text(url)
-        fetched += 1
-        time.sleep(delay)          # 礼儀としてアクセス間隔を空ける
-        if not html:
-            continue
-        ev = parse_atc_event(html, url)
-        if not ev:
-            continue
-        if is_future(ev):
+    out = {}
+    for e in data.get("events", []):
+        ev = normalize_atc(e)
+        if ev:
             out[ev["id"]] = ev
-            consec_past = 0
-        else:
-            consec_past += 1
-            if consec_past >= stop_after_past:
-                break
-    sys.stderr.write(f"[info] ATC: {len(out)} upcoming events ({fetched} pages fetched)\n")
+    sys.stderr.write(f"[info] ATC: {len(out)} events (REST API)\n")
     return list(out.values())
 
 
-def parse_atc_event(html, url):
-    m = _ATC_OG_TITLE.search(html)
-    title = _htmlmod.unescape(m.group(1)) if m else ""
-    title = re.sub(r"\s*\|\s*大阪ベイエリア.*$", "", title).strip()
-    if not title:
+def normalize_atc(e):
+    eid = e.get("id")
+    title = (e.get("title") or "").strip()
+    d = e.get("date_ymd") or ""
+    if eid is None or not title or not d:
         return None
-
-    mu = _ATC_OG_URL.search(html)
-    public_url = mu.group(1) if mu else url
-    date_str = _atc_dd("開催日", html)
-    time_str = _atc_dd("開催時間", html)
-    place = _atc_dd("開催場所", html)
-    genres = [strip(g) for g in _ATC_GENRE.findall(html)]
-
-    starts_at, ends_at = parse_atc_dates(date_str, time_str)
-    if not starts_at:
-        return None
-
-    mid = re.search(r"event-(\d+)", url)
-    eid = "atc" + (mid.group(1) if mid else str(abs(hash(url)) % 100000))
-
-    desc = "｜".join([g for g in genres if g])
-    if place:
-        desc = (desc + "｜会場: " + place) if desc else ("会場: " + place)
-    desc = (desc + "（大阪南港ATC）").strip("｜ ")
-
+    tm = _JP_TIME.search(e.get("time_text") or "")
+    hh, mm = (tm.group(1).zfill(2), tm.group(2)) if tm else ("00", "00")
+    starts_at = f"{d}T{hh}:{mm}:00+09:00"
+    end = e.get("end_ymd") or d
+    ends_at = f"{end}T23:59:00+09:00"
+    place = (e.get("location") or "").strip()
+    status = e.get("status") or ""
+    parts = [p for p in (status, ("会場: " + place) if place else "", e.get("date_text") or "") if p]
+    desc = "｜".join(parts) + "（大阪南港ATC）"
     return {
-        "id": eid,
+        "id": "atc" + str(eid),
         "title": title,
         "description": desc,
         "starts_at": starts_at,
         "ends_at": ends_at,
-        "address": (place + " / 大阪南港ATC") if place else "大阪南港ATC",
+        "address": (place + " / 大阪南港ATC") if place else "大阪南港ATC（大阪市住之江区南港北）",
         "venue_name": place or "大阪南港ATC",
         "lat": ATC_LAT,
         "long": ATC_LON,
         "ticket_limit": 0,
         "participants": 0,
         "banner": None,            # 画像は著作物のため転載しない
-        "public_url": public_url,
+        "public_url": e.get("url") or e.get("official_url") or "https://www.atc-co.com/event/",
         "source": "atc",
     }
-
-
-def parse_atc_dates(date_str, time_str):
-    if not date_str:
-        return None, None
-    full = _ATC_DATE.findall(date_str)   # [(Y,M,D), ...]
-    if not full:
-        return None, None
-    y, mo, d = full[0]
-    hh, mm = "00", "00"
-    tm = _ATC_TIME.search(time_str or "")
-    if tm:
-        hh, mm = tm.group(1).zfill(2), tm.group(2)
-    starts_at = f"{y}-{mo}-{d}T{hh}:{mm}:00+09:00"
-
-    ends_at = None
-    if any(sep in date_str for sep in ("～", "〜", "-", "ー")):
-        if len(full) >= 2:                       # YYYY.MM.DD～YYYY.MM.DD
-            ey, emo, ed = full[1]
-            ends_at = f"{ey}-{emo}-{ed}T23:59:00+09:00"
-        else:                                    # YYYY.MM.DD～MM.DD（同年）
-            tail = re.split(r"[～〜\-ー]", date_str, 1)
-            if len(tail) == 2:
-                md = _ATC_DATE_MD.search(tail[1])
-                if md:
-                    ends_at = f"{y}-{md.group(1)}-{md.group(2)}T23:59:00+09:00"
-    return starts_at, ends_at
 
 
 # ── 日本語日付パーサ（「YYYY年M月D日」系。範囲・カンマ列対応）──────

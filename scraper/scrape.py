@@ -624,11 +624,85 @@ def fetch_intex():
     return list(out.values())
 
 
+# ── 大阪科学技術館 OSTEC（公開WP REST。開催日はタイトル内に埋没）──
+# robots: /ostec_wpcore/wp-admin のみ禁止＝news取得は許可。
+# 開催日が「【M月D日(曜)実施/開催】」等のタイトル表記に依存するため、
+# 日付が抽出できたニュースのみ採用（休館案内・月次まとめ等はスキップ）。
+OSTEC_API = "https://www.ostec.or.jp/pop/wp-json/wp/v2/news?per_page=50"
+OSTEC_LAT, OSTEC_LON = 34.6847, 135.4889
+
+# 「YYYY年M月D日」または「M月D日」（範囲は最大2つ拾う）
+_OSTEC_DATE = re.compile(r"(?:(\d{4})年)?\s?(\d{1,2})月(\d{1,2})日")
+# イベントでない事務連絡を除外（休館・天候対応・募集締切・新聞/号 等）
+_OSTEC_SKIP = re.compile(r"休館|閉館|台風|地震|対応について|締め切り|締切|中止|最新号|新聞|カレンダー")
+
+
+def fetch_ostec():
+    data = http_get_json(OSTEC_API)
+    if not isinstance(data, list):
+        return []
+    out = {}
+    for p in data:
+        try:
+            title = strip(_htmlmod.unescape(p["title"]["rendered"]))
+        except Exception:
+            continue
+        if not title or _OSTEC_SKIP.search(title):
+            continue
+        matches = _OSTEC_DATE.findall(title.translate(_Z2H))
+        if not matches:
+            continue   # 日付の無いニュースは載せない
+        # 年はタイトルに無ければ「投稿日」を基準に推定（過去記事の誤未来化を防ぐ）
+        try:
+            base = datetime.fromisoformat(p["date"][:19])
+        except Exception:
+            base = datetime.now()
+        sy, smo, sd = _ostec_ymd(matches[0], base)
+        starts_at = f"{sy:04d}-{smo:02d}-{sd:02d}T00:00:00+09:00"
+        ends_at = None
+        if len(matches) > 1:
+            ey, emo, ed = _ostec_ymd(matches[1], base)
+            if (ey, emo, ed) < (sy, smo, sd):
+                ey += 1
+            ends_at = f"{ey:04d}-{emo:02d}-{ed:02d}T23:59:00+09:00"
+        eid = "ostec" + str(p.get("id") or _hid("", title, starts_at))
+        out[eid] = {
+            "id": eid,
+            "title": title,
+            "description": "大阪科学技術館（OSTEC／靭本町）のイベント・実験教室",
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+            "address": "大阪科学技術館（大阪市西区靭本町）",
+            "venue_name": "大阪科学技術館",
+            "lat": OSTEC_LAT,
+            "long": OSTEC_LON,
+            "ticket_limit": 0,
+            "participants": 0,
+            "banner": None,
+            "public_url": p.get("link") or "https://www.ostec.or.jp/pop/",
+            "source": "ostec",
+        }
+    sys.stderr.write(f"[info] 大阪科学技術館: {len(out)} events\n")
+    return list(out.values())
+
+
+def _ostec_ymd(match, base):
+    """(year|'', month, day) → (Y,M,D)。年無しは投稿日(base)基準で、
+    投稿月より小さい月なら翌年扱い（年末公開→翌年開催に対応）。"""
+    y_s, mo_s, d_s = match
+    mo, d = int(mo_s), int(d_s)
+    if y_s:
+        return int(y_s), mo, d
+    y = base.year + 1 if mo < base.month else base.year
+    return y, mo, d
+
+
 def main():
     all_events = {}
     for fetch in (fetch_doorkeeper, fetch_connpass, fetch_atc,
                   fetch_keihanna, fetch_expocenter,
-                  fetch_kidsplaza, fetch_scimuseum, fetch_intex):
+                  fetch_kidsplaza, fetch_scimuseum, fetch_intex,
+                  fetch_ostec):
         try:
             for ev in fetch():
                 if ev.get("id") and is_future(ev):

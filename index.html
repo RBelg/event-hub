@@ -355,7 +355,7 @@
       <h2>🎯 気になるテーマで絞り込む（複数選択可）</h2>
       <p>選んだテーマに近いイベントが「⭐ おすすめ」バッジ付きで上位表示されます</p>
       <div class="itags" id="interestTags">
-        <button class="itag active" data-i="AI・機械学習">🤖 AI・機械学習</button>
+        <button class="itag" data-i="AI・機械学習">🤖 AI・機械学習</button>
         <button class="itag" data-i="ロボティクス">🦾 ロボティクス</button>
         <button class="itag" data-i="宇宙・天文">🚀 宇宙・天文</button>
         <button class="itag" data-i="生物・医療">🧬 生物・医療</button>
@@ -541,7 +541,7 @@ const S = {
   PAGE:     20,
   cat:      'all',
   search:   '',
-  ints:     new Set(['AI・機械学習']),
+  ints:     new Set(),
   city:     null,      // { pref, lat, lon, prefEN }
   locMode:  'all',     // 'all' | 'offline' | 'online'
 };

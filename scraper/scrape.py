@@ -440,10 +440,195 @@ def parse_expo_event(html, url, eid_num):
     }
 
 
+# ── キッズプラザ大阪（公式イベント一覧 1ページに全件）────────────
+KIDS_URL = "https://www.kidsplaza.or.jp/event/list/"  # 一覧フラグメント（全件入り）
+KIDS_BASE = "https://www.kidsplaza.or.jp"
+KIDS_LAT, KIDS_LON = 34.7058, 135.5099
+
+_KIDS_LI = re.compile(r'<li class="f5">(.*?)</li>', re.S)
+_KIDS_A = re.compile(r'<a href="(/event/[^"]+)"[^>]*>(?:<i[^>]*></i>)?(.*?)</a>', re.S)
+_KIDS_PLACE = re.compile(r'<span class="place">(?:<i[^>]*></i>)?(.*?)</span>', re.S)
+_KIDS_DATE = re.compile(r'<span class="date">(.*?)(?:<p|</span>)', re.S)
+
+
+def fetch_kidsplaza():
+    html = http_get_text(KIDS_URL)
+    if not html:
+        return []
+    out = {}
+    for block in _KIDS_LI.findall(html):
+        ma = _KIDS_A.search(block)
+        if not ma:
+            continue
+        path, title = ma.group(1).strip(), strip(ma.group(2))
+        if not title:
+            continue
+        md = _KIDS_DATE.search(block)
+        starts_at, ends_at = parse_jp_dates(strip(md.group(1)) if md else "")
+        if not starts_at:
+            continue
+        mp = _KIDS_PLACE.search(block)
+        venue = strip(mp.group(1)) if mp else "キッズプラザ大阪"
+        eid = "kids" + re.sub(r"\D", "", path)[-9:]
+        out[eid] = {
+            "id": eid,
+            "title": title,
+            "description": f"会場: {venue}（キッズプラザ大阪／こどものための博物館）",
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+            "address": f"{venue} / キッズプラザ大阪（大阪市北区扇町）",
+            "venue_name": venue or "キッズプラザ大阪",
+            "lat": KIDS_LAT,
+            "long": KIDS_LON,
+            "ticket_limit": 0,
+            "participants": 0,
+            "banner": None,
+            "public_url": KIDS_BASE + path,
+            "source": "kidsplaza",
+        }
+    sys.stderr.write(f"[info] キッズプラザ大阪: {len(out)} events\n")
+    return list(out.values())
+
+
+# ── 大阪市立科学館（公式イベント一覧 tbl-basic、年は当月基準で補完）──
+SCI_URL = "https://www.sci-museum.jp/event/"
+SCI_LAT, SCI_LON = 34.6920, 135.4910
+
+_SCI_TABLE = re.compile(r'<table class="tbl-basic">(.*?)</table>', re.S)
+_SCI_ROW = re.compile(r"<tr>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*</tr>", re.S)
+_SCI_A = re.compile(r'<a href="(#?[^"]*)"[^>]*>(.*?)</a>', re.S)
+_SCI_MD = re.compile(r"(\d{1,2})月(\d{1,2})日")
+
+
+def _sci_ymd(md_text, base_year, base_month):
+    """「M月D日」→ YYYY-MM-DD。月が基準月より小さければ翌年扱い。"""
+    m = _SCI_MD.search(md_text.translate(_Z2H))
+    if not m:
+        return None, None, None
+    mo, d = int(m.group(1)), int(m.group(2))
+    y = base_year + 1 if mo < base_month else base_year
+    return y, mo, d
+
+
+def fetch_scimuseum():
+    html = http_get_text(SCI_URL)
+    if not html:
+        return []
+    mt = _SCI_TABLE.search(html)
+    if not mt:
+        sys.stderr.write("[info] 大阪市立科学館: table not found\n")
+        return []
+    now = datetime.now()
+    by, bm = now.year, now.month
+    out = {}
+    for date_cell, title_cell in _SCI_ROW.findall(mt.group(1)):
+        ma = _SCI_A.search(title_cell)
+        if ma:
+            href, title = ma.group(1).strip(), strip(ma.group(2))
+        else:
+            href, title = "", strip(title_cell)
+        if not title:
+            continue
+        # 日付セルは「M月D日（曜）」、範囲は <br>～ で2つ目が終了
+        parts = re.split(r"[～〜]", date_cell)
+        sy, smo, sd = _sci_ymd(parts[0], by, bm)
+        if not sy:
+            continue
+        starts_at = f"{sy:04d}-{smo:02d}-{sd:02d}T00:00:00+09:00"
+        ends_at = None
+        if len(parts) > 1:
+            ey, emo, ed = _sci_ymd(parts[1], by, bm)
+            if ey:
+                # 終了が開始より前なら年跨ぎ
+                if (ey, emo, ed) < (sy, smo, sd):
+                    ey += 1
+                ends_at = f"{ey:04d}-{emo:02d}-{ed:02d}T23:59:00+09:00"
+        public_url = SCI_URL + href if href.startswith("#") else (href or SCI_URL)
+        eid = _hid("sci", title, starts_at)
+        out[eid] = {
+            "id": eid,
+            "title": title,
+            "description": "大阪市立科学館（中之島）のイベント・サイエンスショー",
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+            "address": "大阪市立科学館（大阪市北区中之島）",
+            "venue_name": "大阪市立科学館",
+            "lat": SCI_LAT,
+            "long": SCI_LON,
+            "ticket_limit": 0,
+            "participants": 0,
+            "banner": None,
+            "public_url": public_url,
+            "source": "scimuseum",
+        }
+    sys.stderr.write(f"[info] 大阪市立科学館: {len(out)} events\n")
+    return list(out.values())
+
+
+# ── インテックス大阪（公式ajax、is_holding=1で開催中・予定を全件）──
+INTEX_API = "https://www.intex-osaka.com/jp/event/ajax_search/?is_holding=1&limit=100"
+INTEX_PUBLIC = "https://www.intex-osaka.com/jp/event/"
+INTEX_LAT, INTEX_LON = 34.6388, 135.4192
+
+_INTEX_ITEM = re.compile(r"<div id='show_event-(\d+)'[^>]*class=\"([^\"]*)\".*?(?=<div id='show_event-|$)", re.S)
+_INTEX_YMD = re.compile(r"\b(\d{8})\b")
+_INTEX_TAG = re.compile(r'event-tag[^>]*>([^<]+)<')
+_INTEX_TTL = re.compile(r'event-ttl">(.*?)</h3>', re.S)
+
+
+def _intex_iso(ymd, end=False):
+    y, mo, d = ymd[:4], ymd[4:6], ymd[6:8]
+    return f"{y}-{mo}-{d}T{'23:59' if end else '00:00'}:00+09:00"
+
+
+def fetch_intex():
+    html = http_get_text(INTEX_API, headers={"X-Requested-With": "XMLHttpRequest"})
+    if not html:
+        return []
+    out = {}
+    for eid_num, cls in _INTEX_ITEM.findall(html):
+        block_start = html.find(f"show_event-{eid_num}")
+        block = html[block_start:block_start + 2000]
+        mt = _INTEX_TTL.search(block)
+        if not mt:
+            continue
+        title = strip(re.sub(r'<span class="tag-end">.*?</span>', "", mt.group(1)))
+        if not title:
+            continue
+        ymds = _INTEX_YMD.findall(cls)
+        if not ymds:
+            continue
+        starts_at = _intex_iso(ymds[0])
+        ends_at = _intex_iso(ymds[-1], end=True) if len(ymds) > 1 and ymds[-1] != ymds[0] else None
+        mtag = _INTEX_TAG.search(block)
+        genre = strip(mtag.group(1)) if mtag else ""
+        desc = (genre + "｜" if genre else "") + "インテックス大阪（大阪南港）"
+        eid = "intex" + eid_num
+        out[eid] = {
+            "id": eid,
+            "title": title,
+            "description": desc,
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+            "address": "インテックス大阪（大阪市住之江区南港北）",
+            "venue_name": "インテックス大阪",
+            "lat": INTEX_LAT,
+            "long": INTEX_LON,
+            "ticket_limit": 0,
+            "participants": 0,
+            "banner": None,
+            "public_url": INTEX_PUBLIC + "#show_event-" + eid_num,
+            "source": "intex",
+        }
+    sys.stderr.write(f"[info] インテックス大阪: {len(out)} events\n")
+    return list(out.values())
+
+
 def main():
     all_events = {}
     for fetch in (fetch_doorkeeper, fetch_connpass, fetch_atc,
-                  fetch_keihanna, fetch_expocenter):
+                  fetch_keihanna, fetch_expocenter,
+                  fetch_kidsplaza, fetch_scimuseum, fetch_intex):
         try:
             for ev in fetch():
                 if ev.get("id") and is_future(ev):

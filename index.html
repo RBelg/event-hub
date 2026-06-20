@@ -374,7 +374,6 @@
       <h2 class="sec-title" id="secLabel">すべてのイベント</h2>
       <div class="sec-count"><span id="resCount">0</span> 件</div>
     </div>
-    <div class="tag-row" id="tagRow"></div>
     <div class="ev-grid" id="evGrid"></div>
     <div id="emptyState" style="display:none;text-align:center;padding:48px 20px;color:var(--muted)">
       <div style="font-size:48px;margin-bottom:12px">🔍</div>
@@ -864,7 +863,6 @@ function applyFilters() {
   S.filtered = evs;
   S.shown    = S.PAGE;
   renderCatBar();
-  renderTagRow();
   renderGrid();
 }
 
@@ -899,24 +897,6 @@ function selectCat(id) {
   const ci = CATS.find(c=>c.id===id);
   document.getElementById('secLabel').textContent =
     id==='all' ? 'すべてのイベント' : `${ci.icon} ${ci.label}`;
-  applyFilters();
-}
-
-/* ═══════════════════════════════
-   TAG ROW
-═══════════════════════════════ */
-function renderTagRow() {
-  const tags = [...new Set(S.filtered.flatMap(e=>e.tags))].slice(0,20);
-  document.getElementById('tagRow').innerHTML = tags.map(t =>
-    `<button class="ftag${S.ints.has(t)?' active':''}" onclick="toggleTag('${t}')">${t}</button>`
-  ).join('');
-}
-
-function toggleTag(t) {
-  S.ints.has(t) ? S.ints.delete(t) : S.ints.add(t);
-  document.querySelectorAll('.itag').forEach(b =>
-    b.classList.toggle('active', S.ints.has(b.dataset.i))
-  );
   applyFilters();
 }
 

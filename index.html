@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 更新が確実に反映されるようキャッシュを抑止（iframe埋め込み対策） -->
+  <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
   <title>EventHub — 理系・知的好奇心のためのイベント情報</title>
   <!-- Google AdSense 自動広告 -->
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6139303336995902"
@@ -122,13 +125,6 @@
                          background:var(--pri);border-radius:2px; }
     .sec-count { font-size:13px;color:var(--muted); }
     .sec-count span { font-size:16px;font-weight:800;color:var(--pri); }
-
-    /* ── Tag filter row ── */
-    .tag-row { display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px; }
-    .ftag { padding:4px 12px;border-radius:20px;font-size:11.5px;cursor:pointer;
-            background:var(--bg);border:1px solid var(--border);color:var(--muted);transition:.2s; }
-    .ftag:hover { border-color:var(--pri-lt);color:var(--pri-lt); }
-    .ftag.active { background:var(--pri);border-color:var(--pri);color:#fff; }
 
     /* ── Events Grid ── */
     .ev-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));

@@ -731,8 +731,9 @@ async function fetchDoorkeeper() {
 ═══════════════════════════════ */
 function normalizeEv(ev) {
   const txt    = (ev.title || '') + ' ' + stripHtml(ev.description || '');
-  // インテックス大阪は会場の性質上ほぼ全てが展示会・見本市なので展示会扱い
-  const cat    = ev.source === 'intex' ? 'expo' : autoCat(txt);
+  // 大型展示会場（インテックス・ビッグサイト・幕張）は会場の性質上ほぼ全て展示会
+  const EXPO_VENUES = ['intex', 'bigsight', 'makuhari'];
+  const cat    = EXPO_VENUES.includes(ev.source) ? 'expo' : autoCat(txt);
   const tags   = autoTags(txt);
   const isOnline = !ev.lat && !ev.long &&
     /オンライン|online|リモート|ウェビナー|webinar|zoom|meet|teams/i.test(txt);

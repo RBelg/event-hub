@@ -697,12 +697,144 @@ def _ostec_ymd(match, base):
     return y, mo, d
 
 
+# ── 東京ビッグサイト（国内最大級。公開イベント一覧 search.php?page=N）──
+# robots無し＝制限なし。各 <article class="lyt-event-01"> に
+# タイトル(h3.hdg-01 内 a)・開催期間(dt/dd)・利用施設・公式URL。未来日付の昇順。
+BIGSIGHT_PAGE = "https://www.bigsight.jp/visitor/event/search.php?page="
+BIGSIGHT_LIST = "https://www.bigsight.jp/visitor/event/"
+BIGSIGHT_LAT, BIGSIGHT_LON = 35.6300, 139.7945
+
+_BS_ARTICLE = re.compile(r'<article class="lyt-event-01">(.*?)</article>', re.S)
+_BS_TITLE_A = re.compile(r'<h3 class="hdg-01">\s*<a href="([^"]*)"[^>]*>(.*?)(?:<svg|</a>)', re.S)
+_BS_DD = re.compile(r"<dt>\s*開催期間\s*</dt>\s*<dd>(.*?)</dd>", re.S)
+_BS_VENUE = re.compile(r"<dt>\s*利用施設\s*</dt>\s*<dd>(.*?)</dd>", re.S)
+
+
+def fetch_bigsight(max_pages=30):
+    out = {}
+    for pg in range(1, max_pages + 1):
+        html = http_get_text(BIGSIGHT_PAGE + str(pg))
+        time.sleep(0.3)
+        if not html:
+            break
+        arts = _BS_ARTICLE.findall(html)
+        if not arts:
+            break
+        added = 0
+        for block in arts:
+            ma = _BS_TITLE_A.search(block)
+            if not ma:
+                continue
+            url, title = ma.group(1).strip(), strip(ma.group(2))
+            if not title:
+                continue
+            md = _BS_DD.search(block)
+            starts_at, ends_at = parse_jp_dates(strip(md.group(1)) if md else "")
+            if not starts_at:
+                continue
+            mv = _BS_VENUE.search(block)
+            venue = strip(mv.group(1)) if mv else "東京ビッグサイト"
+            eid = _hid("bs", title, starts_at)
+            if eid in out:
+                continue
+            out[eid] = {
+                "id": eid,
+                "title": title,
+                "description": f"会場: {venue}（東京ビッグサイト／東京国際展示場）",
+                "starts_at": starts_at,
+                "ends_at": ends_at,
+                "address": f"{venue} / 東京ビッグサイト（東京都江東区有明）",
+                "venue_name": venue or "東京ビッグサイト",
+                "lat": BIGSIGHT_LAT,
+                "long": BIGSIGHT_LON,
+                "ticket_limit": 0,
+                "participants": 0,
+                "banner": None,
+                # 詳細は主催者サイト(外部)になりがち。取れた公式URLは活かしつつ、
+                # 無ければビッグサイト公式イベント一覧へ。
+                "public_url": url if url.startswith("http") else BIGSIGHT_LIST,
+                "source": "bigsight",
+            }
+            added += 1
+        if added == 0:
+            break   # 既知のみ＝末尾。打ち切り
+    sys.stderr.write(f"[info] 東京ビッグサイト: {len(out)} events\n")
+    return list(out.values())
+
+
+# ── 幕張メッセ（公開イベント一覧 /event/?page=N）──────────────
+# robots無し。各itemに category「展示会・見本市」/ date「YYYY.MM.DD(曜) 〜 …」/
+# eventTit / detailリンク(/event/detail/N)。
+MAKUHARI_PAGE = "https://www.m-messe.co.jp/event/?page="
+MAKUHARI_BASE = "https://www.m-messe.co.jp"
+MAKUHARI_LAT, MAKUHARI_LON = 35.6483, 140.0345
+
+_MK_ITEM = re.compile(r'<a href="(/event/detail/\d+)">(.*?)</a>', re.S)
+_MK_DATE = re.compile(r'class="date">\s*(.*?)\s*</div>', re.S)
+_MK_TITLE = re.compile(r'class="eventTit">(.*?)</div>', re.S)
+_MK_YMD = re.compile(r"(\d{4})\.(\d{1,2})\.(\d{1,2})")
+
+
+def fetch_makuhari(max_pages=20):
+    out = {}
+    for pg in range(1, max_pages + 1):
+        html = http_get_text(MAKUHARI_PAGE + str(pg))
+        time.sleep(0.3)
+        if not html:
+            break
+        items = _MK_ITEM.findall(html)
+        if not items:
+            break
+        added = 0
+        for path, body in items:
+            mt = _MK_TITLE.search(body)
+            title = strip(re.sub(r"<br\s*/?>", " ", mt.group(1))) if mt else ""
+            if not title:
+                continue
+            md = _MK_DATE.search(body)
+            starts_at = ends_at = None
+            if md:
+                ymds = _MK_YMD.findall(md.group(1))
+                if ymds:
+                    y, mo, d = ymds[0]
+                    starts_at = f"{int(y):04d}-{int(mo):02d}-{int(d):02d}T00:00:00+09:00"
+                    if len(ymds) > 1:
+                        ey, emo, ed = ymds[-1]
+                        ends_at = f"{int(ey):04d}-{int(emo):02d}-{int(ed):02d}T23:59:00+09:00"
+            if not starts_at:
+                continue
+            eid = "mk" + re.sub(r"\D", "", path)
+            if eid in out:
+                continue
+            out[eid] = {
+                "id": eid,
+                "title": title,
+                "description": "幕張メッセ（千葉・国際展示場）の展示会・見本市",
+                "starts_at": starts_at,
+                "ends_at": ends_at,
+                "address": "幕張メッセ（千葉県千葉市美浜区中瀬）",
+                "venue_name": "幕張メッセ",
+                "lat": MAKUHARI_LAT,
+                "long": MAKUHARI_LON,
+                "ticket_limit": 0,
+                "participants": 0,
+                "banner": None,
+                "public_url": MAKUHARI_BASE + path,
+                "source": "makuhari",
+            }
+            added += 1
+        if added == 0:
+            break
+    sys.stderr.write(f"[info] 幕張メッセ: {len(out)} events\n")
+    return list(out.values())
+
+
 def main():
     all_events = {}
     for fetch in (fetch_doorkeeper, fetch_connpass, fetch_atc,
                   fetch_keihanna, fetch_expocenter,
                   fetch_kidsplaza, fetch_scimuseum, fetch_intex,
-                  fetch_ostec):
+                  fetch_ostec, fetch_bigsight, fetch_makuhari):
         try:
             for ev in fetch():
                 if ev.get("id") and is_future(ev):

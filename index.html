@@ -178,6 +178,7 @@
     .t-science   { background:#d1fae5;color:#065f46; }
     .t-education { background:#fef3c7;color:#78350f; }
     .t-art       { background:#ede9fe;color:#5b21b6; }
+    .t-expo      { background:#cffafe;color:#155e75; }
     .t-academic  { background:#fee2e2;color:#991b1b; }
     .t-music     { background:#fce7f3;color:#9d174d; }
     .t-sports    { background:#ffedd5;color:#9a3412; }
@@ -186,6 +187,7 @@
     .g-science   { background:linear-gradient(135deg,#065f46,#10b981); }
     .g-education { background:linear-gradient(135deg,#78350f,#f59e0b); }
     .g-art       { background:linear-gradient(135deg,#5b21b6,#a78bfa); }
+    .g-expo      { background:linear-gradient(135deg,#155e75,#06b6d4); }
     .g-academic  { background:linear-gradient(135deg,#7f1d1d,#f87171); }
     .g-music     { background:linear-gradient(135deg,#831843,#f472b6); }
     .g-sports    { background:linear-gradient(135deg,#7c2d12,#fb923c); }
@@ -472,6 +474,7 @@ const CATS = [
   { id:'science',   icon:'🔬', label:'科学・理工'     },
   { id:'education', icon:'📚', label:'子供・教育'     },
   { id:'art',       icon:'🎨', label:'アート・展示'   },
+  { id:'expo',      icon:'🏛️', label:'展示会・見本市' },
   { id:'academic',  icon:'🎓', label:'学術・研究'     },
   { id:'music',     icon:'🎵', label:'音楽・エンタメ' },
   { id:'sports',    icon:'⚽', label:'スポーツ'       },
@@ -479,10 +482,11 @@ const CATS = [
 ];
 
 const THUMB = { tech:'💻', science:'🔬', education:'📚', art:'🎨',
-                academic:'🎓', music:'🎵', sports:'⚽', food:'🍽️' };
+                expo:'🏛️', academic:'🎓', music:'🎵', sports:'⚽', food:'🍽️' };
 
 // Category auto-detect patterns (title + catch text)
 const CAT_PAT = {
+  expo:      /展示会|見本市|博覧会|エキスポ(?!センター)|フェア(?!リー)|messe|メッセ(?!ージ)|商談会|モーターショー|trade\s?show|japan\s?show|security\s?show|ロボットワールド|○○展|建材展|教育ict展|ブース出展/i,
   science:   /量子|宇宙|天文|惑星|ロケット|科学|生物|化学|物理|ゲノム|dna|医療|医学|工学|理工|気候|環境科学/i,
   education: /子供|こども|小学|中学|高校|ジュニア|キッズ|youth|kids|保護者|親子|教育|教室|スクール|stem|入門|beginner|ビギナー|初心者|入門/i,
   art:       /アート|デザイン|クリエイティブ|メディアアート|デジタルアート|映像|イラスト|UI\/UX|ux|ui/i,
@@ -727,7 +731,8 @@ async function fetchDoorkeeper() {
 ═══════════════════════════════ */
 function normalizeEv(ev) {
   const txt    = (ev.title || '') + ' ' + stripHtml(ev.description || '');
-  const cat    = autoCat(txt);
+  // インテックス大阪は会場の性質上ほぼ全てが展示会・見本市なので展示会扱い
+  const cat    = ev.source === 'intex' ? 'expo' : autoCat(txt);
   const tags   = autoTags(txt);
   const isOnline = !ev.lat && !ev.long &&
     /オンライン|online|リモート|ウェビナー|webinar|zoom|meet|teams/i.test(txt);

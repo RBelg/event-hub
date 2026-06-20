@@ -622,7 +622,15 @@ async function loadEvents() {
       throw dkFailed || new Error('イベントが0件でした（しばらく待ってから再試行してください）');
     }
 
-    S.raw = [...seen.values()];
+    // ID一意化のあと、コンテンツ（タイトル＋同日）で2段目の重複排除。
+    // 直接Doorkeeperと aggregated 複製、別主催の同一イベント等を1件に統合。
+    const dmap = new Map();
+    for (const ev of seen.values()) {
+      const k   = dedupeKey(ev);
+      const cur = dmap.get(k);
+      if (!cur || preferOver(ev, cur)) dmap.set(k, ev);
+    }
+    S.raw = [...dmap.values()];
     applyFilters();
     show('content');
   } catch(e) {
@@ -748,6 +756,30 @@ function normalizeEv(ev) {
     isOnline,
     isSoon:    isSoon(ev.starts_at),
   };
+}
+
+/* 重複判定キー：正規化タイトル＋開催日(YYYY-MM-DD)。
+   日付が違えば別イベント扱い（連続開催を誤結合しない）。
+   タイトルが空になる場合は id を混ぜて重複対象から外す（誤統合防止）。 */
+function dedupeKey(e) {
+  const t = (e.title || '')
+    .toLowerCase()
+    .replace(/[\s　]/g, '')
+    .replace(/[、。・,.\-—~〜！!？?（）()【】\[\]「」『』:：/／]/g, '');
+  if (!t) return 'id:' + e.id;
+  return t + '|' + (e.dateRaw || '').slice(0, 10);
+}
+
+/* 重複時にどちらを残すか：a を優先するなら true。
+   ①直接ソース優先（id に "aggregated:" 等の接頭辞が無い）→ ②情報量(banner→desc→url)。 */
+function preferOver(a, b) {
+  const da = !String(a.id).includes(':');
+  const db = !String(b.id).includes(':');
+  if (da !== db) return da;                       // 直接ソースを優先
+  if (!!a.banner !== !!b.banner) return !!a.banner;
+  if ((a.desc || '').length !== (b.desc || '').length)
+    return (a.desc || '').length > (b.desc || '').length;
+  return !!a.url && !b.url;
 }
 
 function autoCat(txt) {
